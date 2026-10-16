@@ -22,9 +22,20 @@ $VersionFile = "C:\ArchivosNuevos\version.txt"
 # --- GITHUB AUTO-UPDATER ---
 $GH_Repo          = "Richard-Condor/GESTION_JACKPOT"
 $GH_Folder        = "CONTROL_SALA"          # <--- Carpeta dentro del repo donde subes los ficheros
-$GH_TokenPlain    = "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"                       # <--- Pega aqui tu PAT de solo lectura
+$GH_TokenPlain    = ""                       # <--- El token ya NO va aqui: se lee de gh_token.txt (abajo)
 $GH_CheckEveryMin = 15
 $GH_ManifestFile  = "$ControlPath\gh_manifest_control.json"
+
+# --- Token de GitHub: fichero LOCAL, fuera del repo (2026-10-16) ---
+# El PAT ya no puede vivir dentro de este fichero: GitHub lo detecta
+# al subirlo al repo y lo revoca (paso el 2026-10-16: 401 desde el
+# primer sondeo tras el push). El token va en C:\Control\gh_token.txt
+# (una linea, solo en este servidor, nunca se sube a GitHub). Si el
+# fichero no existe, el auto-updater simplemente no arranca.
+$GH_TokenFile = Join-Path $ControlPath "gh_token.txt"
+if (Test-Path $GH_TokenFile) {
+    try { $GH_TokenPlain = (Get-Content $GH_TokenFile -Raw -Encoding UTF8).Trim() } catch {}
+}
 $script:GH_LastCheck  = [datetime]::MinValue
 $script:GH_Manifest   = @{}
 
