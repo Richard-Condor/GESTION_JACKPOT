@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{SALA_NOMBRE}}</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#f4f4f5; color:#18181b; }
+  .wrap { max-width:860px; margin:0 auto; padding:28px 18px 40px; }
+  header.top { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; margin-bottom:6px; }
+  h1 { font-size:26px; font-weight:700; letter-spacing:-.01em; }
+  .apagar-todos { flex-shrink:0; background:#fef2f2; color:#b91c1c; border:1.5px solid #fca5a5; font-weight:700; font-size:15px; border-radius:999px; padding:12px 22px; cursor:pointer; font-family:inherit; }
+  .apagar-todos:hover { background:#fee2e2; }
+  .leyenda { margin:4px 0 20px; display:flex; flex-direction:column; gap:4px; }
+  .leyenda .fila { display:flex; align-items:center; gap:8px; font-size:13px; color:#71717a; }
+  .mini { font-size:11.5px; font-weight:600; border-radius:6px; padding:2px 8px; }
+  .mini.azul { background:#e0f2fe; color:#0369a1; }
+  .mini.gris { background:#e4e4e7; color:#3f3f46; }
+  .estado-envio { display:none; background:#fffbeb; border:1px solid #fde68a; color:#92400e; border-radius:10px; padding:10px 14px; font-size:14px; margin-bottom:14px; }
+  .estado-envio.ok { background:#f0fdf4; border-color:#bbf7d0; color:#166534; }
+  .estado-envio.mal { background:#fef2f2; border-color:#fecaca; color:#991b1b; }
+  .maquina { background:#fff; border:1px solid #d8d8dc; border-radius:12px; padding:16px 18px; margin-bottom:12px; display:flex; align-items:center; gap:16px; }
+  .maquina:hover { border-color:#a1a1aa; }
+  .punto { width:11px; height:11px; border-radius:50%; flex-shrink:0; background:#d4d4d8; }
+  .punto.on { background:#22c55e; }
+  .punto.off { background:#ef4444; }
+  .info { flex:1; min-width:0; }
+  .nombre { font-size:17px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .puestos { font-size:13px; color:#71717a; margin-top:3px; display:flex; gap:5px; flex-wrap:wrap; }
+  .chip { background:#f4f4f5; border:1px solid #e4e4e7; border-radius:6px; padding:1px 7px; font-size:12px; color:#52525b; }
+  .acciones { display:flex; gap:8px; flex-shrink:0; }
+  .btn { font-family:inherit; font-size:14px; font-weight:600; border-radius:9px; padding:10px 16px; cursor:pointer; border:1px solid transparent; white-space:nowrap; }
+  .btn-azul { background:#0284c7; color:#fff; }
+  .btn-azul:hover { background:#0369a1; }
+  .btn-gris { background:#fff; color:#27272a; border-color:#d4d4d8; }
+  .btn-gris:hover { background:#f4f4f5; }
+  .btn:disabled { opacity:.35; cursor:not-allowed; }
+  #buscar { width:100%; box-sizing:border-box; padding:10px 14px; margin-bottom:16px; background:#fff; border:1px solid #d4d4d8; border-radius:10px; font-size:15px; font-family:inherit; color:#18181b; }
+  .vacio { text-align:center; color:#71717a; padding:36px 0; font-size:15px; }
+  .sesion { display:none; background:#fef2f2; border:1px solid #fecaca; color:#991b1b; border-radius:10px; padding:12px 16px; font-size:14px; margin-bottom:14px; }
+  .sesion a { color:#991b1b; font-weight:700; }
+  .modal-fondo { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:50; align-items:center; justify-content:center; padding:18px; }
+  .modal-fondo.abierto { display:flex; }
+  .modal { background:#fff; border-radius:16px; padding:26px; max-width:430px; width:100%; text-align:center; box-shadow:0 12px 40px rgba(0,0,0,.25); }
+  .modal h2 { font-size:19px; margin-bottom:10px; }
+  .modal p { color:#52525b; font-size:15px; line-height:1.5; margin-bottom:22px; }
+  .modal .fila { display:flex; gap:10px; }
+  .modal .fila .btn { flex:1; padding:13px 10px; font-size:15px; }
+  .btn-rojo { background:#dc2626; color:#fff; }
+  .btn-rojo:hover { background:#b91c1c; }
+  @media (max-width:640px) {
+    .maquina { flex-wrap:wrap; }
+    .acciones { width:100%; }
+    .acciones .btn { flex:1; }
+    h1 { font-size:22px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>{{SALA_NOMBRE}}</h1>
+    <button class="apagar-todos" id="btn-apagar-todos">Apagar todos los equipos</button>
+  </header>
+  <div class="leyenda">
+    <div class="fila"><span class="mini azul">Ajustar imagen</span><span>si el juego se ha quedado colgado o no ocupa toda la pantalla</span></div>
+    <div class="fila"><span class="mini gris">Reiniciar</span><span>solo si el equipo entero no responde</span></div>
+  </div>
+  <input id="buscar" type="search" placeholder="Buscar máquina…" autocomplete="off">
+  <div class="sesion" id="sesion">Tu sesión ha caducado. <a href="/login-operador">Volver a entrar</a></div>
+  <div class="estado-envio" id="estado-envio"></div>
+  <div id="lista"><div class="vacio">Cargando máquinas…</div></div>
+</div>
+
+<div class="modal-fondo" id="modal-fondo">
+  <div class="modal">
+    <h2 id="m-titulo">Confirmar</h2>
+    <p id="m-texto"></p>
+    <div class="fila">
+      <button class="btn btn-gris" id="m-cancelar">Cancelar</button>
+      <button class="btn btn-azul" id="m-ok">Sí, hacerlo</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let maquinas = [];      // [{nombre, uids:[], puestos:[], enRed}]
+let pollTimer = null;
+let pollQuedan = 0;
+let pollUids = [];
+
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function nombreBase(group) {
+  const k = group.find(x => x.nombre_maquina) || group[0] || {};
+  let base = k.nombre_maquina ? k.nombre_maquina.replace(/\s+P\d+$/i, '').trim() : '';
+  if (!base && k.matricula) base = k.matricula.replace(/P\d+$/i, '').trim();
+  return base || 'Equipo';
+}
+
+const ESPECIALES = ['SIGNAGE', 'CALENDARIO', 'PLANETAS'];
+
+function numPuesto(k) {
+  const f = (k.puesto && k.puesto !== 'MAIN') ? k.puesto : (k.matricula || '');
+  const m = /P(\d+)$/i.exec(f || '');
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function normTxt(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+
+async function cargar() {
+  try {
+    const r = await fetch('/api/kiosks?t=' + Date.now());
+    if (r.status === 401 || r.status === 403) { document.getElementById('sesion').style.display = 'block'; return; }
+    const data = await r.json();
+    const grupos = {};
+    (Array.isArray(data) ? data : []).forEach(k => {
+      const ip = k.ip_actual || k.hostname;
+      if (!grupos[ip]) grupos[ip] = [];
+      grupos[ip].push(k);
+    });
+    maquinas = Object.entries(grupos).map(([ip, g]) => {
+      const ordenados = [...g].sort((a,b) => (numPuesto(a) ?? 99) - (numPuesto(b) ?? 99));
+      const base = nombreBase(ordenados);
+      // El rango del titulo sale solo de los puestos de juego: un signage,
+      // calendario o planetas dentro del equipo no se menciona.
+      const nums = ordenados.filter(k => !ESPECIALES.includes(k.matricula)).map(numPuesto).filter(n => n !== null);
+      let nombre = base;
+      if (nums.length === 1) nombre = base + ' P' + nums[0];
+      else if (nums.length > 1) nombre = base + ' P' + Math.min(...nums) + '-P' + Math.max(...nums);
+      return {
+        nombre: nombre,
+        base: base,
+        minP: nums.length ? Math.min(...nums) : 999,
+        ip: ip,
+        uids: ordenados.map(k => k.uid),
+        enRed: ordenados.some(k => k.responde_red),
+        todo: ordenados
+      };
+    }).sort((a,b) => a.base.localeCompare(b.base, 'es') || (a.minP - b.minP) || String(a.ip).localeCompare(String(b.ip), 'es', { numeric: true }));
+    pintar();
+  } catch(e) {}
+}
+
+function tienePendientes(k) {
+  const c = k.comandos_pendientes || {};
+  return !!(c.corregir_imagen || c.reiniciar_pc || c.apagar_pc);
+}
+
+function pintar() {
+  const el = document.getElementById('lista');
+  if (!maquinas.length) { el.innerHTML = '<div class="vacio">No hay máquinas registradas todavía.</div>'; return; }
+  const q = normTxt(document.getElementById('buscar').value.trim());
+  const visibles = maquinas.map((m, i) => ({ m, i })).filter(({ m }) => !q || normTxt(m.nombre).includes(q));
+  if (!visibles.length) { el.innerHTML = '<div class="vacio">Ninguna máquina coincide con la búsqueda.</div>'; return; }
+  el.innerHTML = visibles.map(({ m, i }) => `
+    <div class="maquina">
+      <span class="punto ${m.enRed ? 'on' : 'off'}"></span>
+      <div class="info">
+        <div class="nombre">${esc(m.nombre)}</div>
+      </div>
+      <div class="acciones">
+        <button class="btn btn-azul" onclick="accion(${i}, 'imagen')" ${m.enRed ? '' : 'disabled'}>Ajustar imagen</button>
+        <button class="btn btn-gris" onclick="accion(${i}, 'reiniciar')" ${m.enRed ? '' : 'disabled'}>Reiniciar</button>
+      </div>
+    </div>`).join('');
+}
+
+/* Confirmación */
+let fnConfirmar = null;
+function preguntar(titulo, texto, rojo, fn) {
+  document.getElementById('m-titulo').textContent = titulo;
+  document.getElementById('m-texto').textContent = texto;
+  const ok = document.getElementById('m-ok');
+  ok.className = 'btn ' + (rojo ? 'btn-rojo' : 'btn-azul');
+  fnConfirmar = fn;
+  document.getElementById('modal-fondo').classList.add('abierto');
+}
+function cerrarModal() { document.getElementById('modal-fondo').classList.remove('abierto'); fnConfirmar = null; }
+document.getElementById('m-cancelar').addEventListener('click', cerrarModal);
+document.getElementById('m-ok').addEventListener('click', () => { const f = fnConfirmar; cerrarModal(); if (f) f(); });
+
+function mostrarEstado(texto, clase) {
+  const el = document.getElementById('estado-envio');
+  el.textContent = texto;
+  el.className = 'estado-envio' + (clase ? ' ' + clase : '');
+  el.style.display = 'block';
+}
+
+async function enviar(uids, cmds) {
+  await Promise.all(uids.map(uid => fetch(`/api/kiosk/${uid}/commands`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(cmds) }).catch(() => {})));
+}
+
+function vigilar(uids, nombre) {
+  pollUids = uids; pollQuedan = 12;
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    pollQuedan--;
+    await cargar();
+    const mapa = {};
+    maquinas.forEach(m => m.todo.forEach(k => mapa[k.uid] = k));
+    const pendientes = pollUids.some(uid => mapa[uid] && tienePendientes(mapa[uid]));
+    if (!pendientes) {
+      clearInterval(pollTimer); pollTimer = null;
+      mostrarEstado('✓ Hecho: ' + nombre, 'ok');
+    } else if (pollQuedan <= 0) {
+      clearInterval(pollTimer); pollTimer = null;
+      mostrarEstado('Sin confirmación tras 2 minutos: ' + nombre + '. Avisa a mantenimiento.', 'mal');
+    }
+  }, 10000);
+}
+
+function accion(i, tipo) {
+  const m = maquinas[i];
+  if (!m) return;
+  if (tipo === 'imagen') {
+    enviarYVigilar(m.uids, { corregir_imagen: true }, 'Ajustar imagen en ' + m.nombre);
+  } else {
+    preguntar('Reiniciar ' + m.nombre, 'Se va a reiniciar el equipo entero. Tardará unos minutos en volver.', false,
+      () => enviarYVigilar(m.uids, { reiniciar_pc: true }, 'Reiniciar ' + m.nombre));
+  }
+}
+
+async function enviarYVigilar(uids, cmds, nombre) {
+  mostrarEstado('Enviando… ' + nombre, '');
+  await enviar(uids, cmds);
+  await cargar();
+  vigilar(uids, nombre);
+}
+
+document.getElementById('btn-apagar-todos').addEventListener('click', () => {
+  const todos = maquinas.flatMap(m => m.uids);
+  if (!todos.length) return;
+  preguntar('Apagar TODOS los equipos', 'Se van a apagar las ' + maquinas.length + ' máquinas de la sala. Esta acción no se puede deshacer desde aquí.', true,
+    () => enviarYVigilar(todos, { apagar_pc: true }, 'Apagar todos los equipos'));
+});
+
+document.getElementById('buscar').addEventListener('input', pintar);
+setInterval(() => { if (!document.hidden) cargar(); }, 60000);
+cargar();
+</script>
+</body>
+</html>
