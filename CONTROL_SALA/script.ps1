@@ -1,6 +1,6 @@
 ﻿# ============================================================================
 # script.ps1 - CAMPANA DE ACTUALIZACION DE SALA (panel de gestion v2)
-# v4.1 (2026-10-16): SIN cambios de logica. Solo cambia la huella para que
+# v4.3 (2026-10-16): SIN cambios de logica. Solo cambia la huella para que
 # las salas lo descarguen de nuevo y lo ejecuten de verdad con el
 # actualizador v5.1 (el v5 ejecutaba el script sin extension .ps1).
 #
@@ -133,6 +133,7 @@ Log-Campana "================ CAMPANA DE ACTUALIZACION ================"
 # FASE A - Migracion de la API (identica logica a la probada en Villalba)
 # ============================================================================
 $script:NombreSala = $null
+$script:ApiMigrada  = $false
 try {
     $apiActual = Join-Path $ControlPath "api_server.ps1"
     $apiNueva  = Join-Path $ControlPath "api_server.nuevo"
@@ -149,6 +150,7 @@ try {
                 $respaldo = Join-Path $ControlPath ("api_server.ps1.bak-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
                 Copy-Item $apiActual $respaldo -Force -ErrorAction Stop
                 [System.IO.File]::WriteAllText($apiActual, $nuevo, (New-Object System.Text.UTF8Encoding($true)))
+                $script:ApiMigrada = $true
                 Log-Campana "FASE A: API migrada (sala '$($script:NombreSala)', IP $ipSala). Respaldo: $respaldo"
             } else { Log-Campana "FASE A: la inyeccion no caso; API sin tocar." }
         } else { Log-Campana "FASE A: no se pudo leer la identidad del api actual; API sin tocar." }
@@ -370,3 +372,21 @@ if ($SheetsUrl -ne "") {
     else { Log-Campana "FASE C: no se pudo enviar el resumen a la hoja; queda el CSV local." }
 }
 Log-Campana "================ FIN: $completos de $total equipos completos ================"
+
+# ============================================================================
+# CIERRE v4.3 - Si la FASE A ha migrado la API, reiniciarla para aplicar
+# ============================================================================
+# El api_server.ps1 nuevo no se aplica hasta que el proceso muere y el
+# lanzador lo levanta: sin muerte no hay actualizacion. Se programa un
+# matar diferido (15 s) para que, cuando es el propio actualizador quien
+# ha lanzado este script, le de tiempo a apuntar la ejecucion en su
+# manifiesto antes de morir.
+if ($script:ApiMigrada) {
+    try {
+        $apiProcs = Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -match "api_server\.ps1" -and $_.ProcessId -ne $PID }
+        foreach ($p in $apiProcs) {
+            Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"Start-Sleep -Seconds 15; Stop-Process -Id $($p.ProcessId) -Force`"" -WindowStyle Hidden
+            Log-Campana "CIERRE: reinicio de la API programado en 15 s (PID $($p.ProcessId)) para aplicar la migracion."
+        }
+    } catch { Log-Campana "CIERRE: no se pudo programar el reinicio de la API: $($_.Exception.Message)" }
+}

@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # API_SERVER.PS1 - ESTABLE (PING DOBLE + DOBLE CREDENCIAL WMI)
 # ============================================================================
 
@@ -36,6 +36,7 @@ $GH_ManifestFile  = "$ControlPath\gh_manifest_control.json"
 # ejecutarlo (powershell -File exige esa extension; con el nombre
 # aleatorio anterior moria al instante) y solo se da por ejecutado
 # si su codigo de salida es 0.
+# v5.1.1 (2026-10-16): retoque de comentario, sin cambios de codigo.
 $GH_TokenFile = Join-Path $ControlPath "gh_token.txt"
 if (Test-Path $GH_TokenFile) {
     try { $GH_TokenPlain = (Get-Content $GH_TokenFile -Raw -Encoding UTF8).Trim() } catch {}
