@@ -32,6 +32,10 @@ $GH_ManifestFile  = "$ControlPath\gh_manifest_control.json"
 # primer sondeo tras el push). El token va en C:\Control\gh_token.txt
 # (una linea, solo en este servidor, nunca se sube a GitHub). Si el
 # fichero no existe, el auto-updater simplemente no arranca.
+# v5.1 (2026-10-16): el script.ps1 descargado se renombra a .ps1 antes de
+# ejecutarlo (powershell -File exige esa extension; con el nombre
+# aleatorio anterior moria al instante) y solo se da por ejecutado
+# si su codigo de salida es 0.
 $GH_TokenFile = Join-Path $ControlPath "gh_token.txt"
 if (Test-Path $GH_TokenFile) {
     try { $GH_TokenPlain = (Get-Content $GH_TokenFile -Raw -Encoding UTF8).Trim() } catch {}
@@ -313,7 +317,9 @@ if ($GH_TokenPlain -and $GH_TokenPlain -ne "") {
                     [System.IO.File]::WriteAllBytes($tmp, $bytes)
 
                     if ($f.name -ieq "script.ps1") {
-                        $scriptEntry = @{ Path = $tmp; SHA = $f.sha }
+                        $tmpPs1 = $tmp + ".ps1"
+                        Move-Item $tmp $tmpPs1 -Force
+                        $scriptEntry = @{ Path = $tmpPs1; SHA = $f.sha }
                         GH-Log "GitHub: script.ps1 descargado, pendiente de ejecutar."
                     } else {
                         $dest = Join-Path $ControlPath $f.name
@@ -332,9 +338,13 @@ if ($GH_TokenPlain -and $GH_TokenPlain -ne "") {
             if ($scriptEntry) {
                 try {
                     GH-Log "GitHub: ejecutando script.ps1..."
-                    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$($scriptEntry.Path)`"" -Wait -NoNewWindow -ErrorAction Stop
-                    $manifest["script.ps1"] = $scriptEntry.SHA
-                    GH-Log "GitHub: script.ps1 ejecutado correctamente."
+                    $procGH = Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$($scriptEntry.Path)`"" -Wait -NoNewWindow -PassThru -ErrorAction Stop
+                    if ($procGH.ExitCode -eq 0) {
+                        $manifest["script.ps1"] = $scriptEntry.SHA
+                        GH-Log "GitHub: script.ps1 ejecutado correctamente."
+                    } else {
+                        GH-Log "GitHub: script.ps1 termino con codigo $($procGH.ExitCode); NO se da por ejecutado y se reintentara en el proximo ciclo."
+                    }
                 } catch { GH-Log "GitHub: error ejecutando script.ps1: $($_.Exception.Message)" }
                 finally { Remove-Item $scriptEntry.Path -Force -ErrorAction SilentlyContinue }
             }

@@ -1,5 +1,8 @@
 ﻿# ============================================================================
 # script.ps1 - CAMPANA DE ACTUALIZACION DE SALA (panel de gestion v2)
+# v4.1 (2026-10-16): SIN cambios de logica. Solo cambia la huella para que
+# las salas lo descarguen de nuevo y lo ejecuten de verdad con el
+# actualizador v5.1 (el v5 ejecutaba el script sin extension .ps1).
 #
 # Pensado para el auto-updater de GitHub: se sube a CONTROL_SALA junto a
 # panel.html, operador.html, api_server.nuevo, control_kiosk.ps1 y
