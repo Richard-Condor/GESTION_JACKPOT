@@ -1,8 +1,11 @@
 ﻿# ============================================================================
 # script.ps1 - CAMPANA DE ACTUALIZACION DE SALA (panel de gestion v2)
-# v4.3 (2026-10-16): SIN cambios de logica. Solo cambia la huella para que
-# las salas lo descarguen de nuevo y lo ejecuten de verdad con el
-# actualizador v5.1 (el v5 ejecutaba el script sin extension .ps1).
+# v4.4 (2026-10-19): el CIERRE encarga el matar diferido de la API por WMI
+# (Win32_Process.Create) en vez de como proceso hijo del script: asi el
+# actualizador termina de apuntar la ejecucion en su manifiesto antes de
+# que la API muera. Con el hijo (v4.3) la espera del actualizador quedaba
+# bloqueada hasta que el matar se ejecutaba, el manifiesto nunca se
+# guardaba y la campana se re-ejecutaba en cada ciclo de 15 min.
 #
 # Pensado para el auto-updater de GitHub: se sube a CONTROL_SALA junto a
 # panel.html, operador.html, api_server.nuevo, control_kiosk.ps1 y
@@ -374,19 +377,27 @@ if ($SheetsUrl -ne "") {
 Log-Campana "================ FIN: $completos de $total equipos completos ================"
 
 # ============================================================================
-# CIERRE v4.3 - Si la FASE A ha migrado la API, reiniciarla para aplicar
+# CIERRE v4.4 - Si la FASE A ha migrado la API, reiniciarla para aplicar
 # ============================================================================
 # El api_server.ps1 nuevo no se aplica hasta que el proceso muere y el
 # lanzador lo levanta: sin muerte no hay actualizacion. Se programa un
 # matar diferido (15 s) para que, cuando es el propio actualizador quien
 # ha lanzado este script, le de tiempo a apuntar la ejecucion en su
-# manifiesto antes de morir.
+# manifiesto antes de morir. El matar lo crea el servicio WMI
+# (Win32_Process.Create), fuera del arbol de procesos de este script:
+# si fuera un proceso hijo, la espera del actualizador quedaria
+# bloqueada hasta que el matar cayera y el manifiesto no se guardaria.
 if ($script:ApiMigrada) {
     try {
         $apiProcs = Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -match "api_server\.ps1" -and $_.ProcessId -ne $PID }
         foreach ($p in $apiProcs) {
-            Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"Start-Sleep -Seconds 15; Stop-Process -Id $($p.ProcessId) -Force`"" -WindowStyle Hidden
-            Log-Campana "CIERRE: reinicio de la API programado en 15 s (PID $($p.ProcessId)) para aplicar la migracion."
+            $cmdKill = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command `"Start-Sleep -Seconds 15; Stop-Process -Id $($p.ProcessId) -Force`""
+            $resKill = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $cmdKill }
+            if ($resKill.ReturnValue -eq 0) {
+                Log-Campana "CIERRE: reinicio de la API programado en 15 s (PID $($p.ProcessId)) para aplicar la migracion."
+            } else {
+                Log-Campana "CIERRE: WMI no pudo programar el reinicio de la API (codigo $($resKill.ReturnValue))."
+            }
         }
     } catch { Log-Campana "CIERRE: no se pudo programar el reinicio de la API: $($_.Exception.Message)" }
 }
