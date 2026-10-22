@@ -41,9 +41,11 @@ header{display:flex;justify-content:space-between;align-items:center;background:
 .cb-sel{width:16px;height:16px;cursor:pointer;accent-color:#0284c7;flex-shrink:0;margin:0}
 .eq-info{min-width:0}
 .eq-linea{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-.eq-nombre{font-size:18px;font-weight:700;color:#f1f5f9;line-height:1.25}
+.eq-nombre{font-size:17px;font-weight:700;color:#f1f5f9;line-height:1.25}
 .eq-ip{font-size:14px;color:#7d8da6}
-.eq-centro{font-size:12.5px;color:#7d8da6;text-align:center;white-space:nowrap}
+.eq-centro{font-size:14px;color:#7d8da6;text-align:center;white-space:nowrap}
+.eq-centro.ok{color:#4ade80;font-weight:600}
+.eq-centro.off{color:#f87171;font-weight:600}
 .eq-rango{font-size:14px;font-weight:700;color:#fcd34d}
 .chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;border-radius:999px;padding:4px 11px}
 .chip .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
@@ -51,7 +53,7 @@ header{display:flex;justify-content:space-between;align-items:center;background:
 .chip.warn{background:rgba(234,179,8,.08);color:#facc15}
 .chip.off{background:rgba(239,68,68,.08);color:#f87171}
 .puestos{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
-.badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:8px;font-size:12px;font-weight:600;background:#141f36;color:#aebdd2;border:1px solid #22314d}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:8px;font-size:11px;font-weight:600;background:#141f36;color:#aebdd2;border:1px solid #22314d}
 .badge-mat{font-family:inherit}
 .badge-mat .mat{color:#38bdf8;font-family:monospace}
 .cmds-line{margin-top:9px;display:flex;gap:5px;flex-wrap:wrap;align-items:center}
@@ -128,7 +130,7 @@ header{display:flex;justify-content:space-between;align-items:center;background:
   .acciones{grid-column:1 / -1;width:100%}
   .acciones .qbtn{flex:1;height:46px;font-size:14px;padding:0 8px}
   .modal{width:100vw;border-left:none;animation:none}
-  .eq-nombre{font-size:18px}
+  .eq-nombre{font-size:17px}
   header{padding:14px 16px}
   .logo h1{font-size:19px}
 }
@@ -323,6 +325,12 @@ function groupBaseName(group) {
   const k = group.find(x => x.nombre_maquina) || group[0] || {};
   let base = k.nombre_maquina ? k.nombre_maquina.replace(/\s+P\d+$/i, '').trim() : '';
   if (!base && k.matricula) base = k.matricula.replace(/P\d+$/i, '').trim();
+  if (base) {
+    const nums = new Set();
+    group.forEach(x => { const m = (x.matricula || '').match(/P(\d+)$/i) || (x.puesto || '').match(/^P(\d+)$/i); if (m) nums.add(parseInt(m[1], 10)); });
+    const t = base.match(/\s+(\d+)$/);
+    if (t && nums.has(parseInt(t[1], 10))) base = base.slice(0, t.index).trim();
+  }
   return base || '';
 }
 
@@ -365,6 +373,7 @@ function renderTable() {
     let maxTime = Math.max(...group.map(k => new Date(k.ultima_conexion||0).getTime()));
     let timeStr = maxTime > 0 ? new Date(maxTime).toLocaleTimeString('es-ES') : '—';
     const est = estadoGrupo(group);
+    const centroTxt = est.clase === 'on' ? `Conexión OK: ${timeStr}` : (maxTime > 0 ? `Sin conexión desde: ${timeStr}` : 'Sin conexión');
     const nombre = groupBaseName(group) || ip;
     const tags = getGroupTags(group);
     const push = pushInfoGrupo(group);
@@ -376,27 +385,25 @@ function renderTable() {
     const rango = pnums.length === 1 ? `P${pnums[0]}` : (pnums.length > 1 ? `P${pnums[0]}-P${pnums[pnums.length - 1]}` : '');
 
     let matsHTML = '';
-    let gruposMaquinas = {};
+    let gruposMat = {};
     slots.forEach(k => {
-        let baseName = k.nombre_maquina ? k.nombre_maquina.replace(/\s+P\d+$/i, '').trim() : "SLOTS";
-        if (baseName === "SLOTS" && k.matricula) baseName = k.matricula.replace(/P\d+$/i, '').trim();
-        if (!gruposMaquinas[baseName]) gruposMaquinas[baseName] = [];
-        gruposMaquinas[baseName].push(k);
+        const mat0 = k.matricula || 'VACÍO';
+        const baseMat = mat0.replace(/P\d+$/i, '').trim();
+        if (!gruposMat[baseMat]) gruposMat[baseMat] = [];
+        gruposMat[baseMat].push(k);
     });
-    for (const baseName in gruposMaquinas) {
-        const subGrupo = gruposMaquinas[baseName];
-        if (subGrupo.length > 1) {
-            const sufijos = subGrupo.map(k => {
-                let m = (k.matricula||"").match(/P(\d+)$/i);
-                return m ? "P"+m[1] : (k.puesto !== "MAIN" ? k.puesto : "");
-            }).filter(Boolean).join('·');
-            matsHTML += `<span class="badge badge-mat">${esc(baseName)} <strong style="color:#fcd34d;margin-left:5px;">[${esc(sufijos)}]</strong></span>`;
-        } else {
-            const k = subGrupo[0];
-            let pLabel = (!k.puesto || k.puesto === "MAIN") ? "" : `<strong>[${esc(k.puesto)}]</strong> `;
-            let mat = k.matricula || 'VACÍO';
-            matsHTML += `<span class="badge badge-mat">${esc(k.nombre_maquina||baseName)} <span class="mat">${pLabel}${esc(mat)}</span></span>`;
-        }
+    for (const baseMat in gruposMat) {
+        const sub = [...gruposMat[baseMat]].sort((a, b) => {
+            const na = parseInt((((a.matricula || '').match(/P(\d+)$/i) || (a.puesto || '').match(/(\d+)/) || [0, 0])[1]), 10) || 0;
+            const nb = parseInt((((b.matricula || '').match(/P(\d+)$/i) || (b.puesto || '').match(/(\d+)/) || [0, 0])[1]), 10) || 0;
+            return na - nb;
+        });
+        const pares = sub.map(k => {
+            const mat = k.matricula || 'VACÍO';
+            let etq = (k.puesto && /^P[1-9]\d*$/i.test(k.puesto)) ? k.puesto.toUpperCase() : ((mat.match(/P(\d+)$/i) || [])[0] || '');
+            return (etq ? `<strong style="color:#fcd34d">${esc(etq)}</strong> ` : '') + `<span class="mat">${esc(mat)}</span>`;
+        });
+        matsHTML += `<span class="badge badge-mat">${pares.join(' - ')}</span>`;
     }
     specials.forEach(k => {
         let color = "#93c5fd"; let icon = "⚙️";
@@ -412,11 +419,11 @@ function renderTable() {
       <div class="eq-top">
         <label class="eq-check" title="Marcar para acciones en grupo"><input type="checkbox" class="cb-row cb-sel" value="${esc(ip)}" ${marcado ? 'checked' : ''} onchange="updateSelectionUI(this)"></label>
         <div class="eq-info">
-          <div class="eq-linea"><span class="eq-nombre">${esc(nombre)}</span>${rango ? `<span class="eq-rango">${rango}</span>` : ''}<span class="eq-ip">${esc(ip)}</span><span class="chip ${est.clase}"><span class="dot"></span>${est.texto}</span></div>
+          <div class="eq-linea"><span class="eq-nombre">${esc(nombre)}</span>${rango ? `<span class="eq-rango">${rango}</span>` : ''}<span class="eq-ip">${esc(ip)}</span></div>
           <div class="puestos">${matsHTML}</div>
           ${tags || push ? `<div class="cmds-line">${tags}${push ? `<span class="push-info">${push}</span>` : ''}</div>` : ''}
         </div>
-        <div class="eq-centro">Última conexión: ${timeStr}</div>
+        <div class="eq-centro ${est.clase === 'on' ? 'ok' : 'off'}">${centroTxt}</div>
         <div class="acciones">
           <button class="qbtn qbtn-sky" onclick="quickCmd('${esc(ip)}','img')" ${off ? 'disabled' : ''}>🖥 Corregir imagen</button>
           <button class="qbtn" onclick="quickCmd('${esc(ip)}','pc')" ${off ? 'disabled' : ''}>↻ Reiniciar</button>

@@ -472,7 +472,9 @@ function Test-RedParalelo {
 }
 
 function Get-AllKiosks {
-    # v2: ya NO se sobrescribe ultima_conexion con el ping. El estado sale de:
+    # v2 + correccion 2026-10-22: si la red responde, la hora servida se sella con
+    # la actual (comportamiento del api_server original probado en Velilla); el
+    # JSON en disco conserva su hora real de check-in. El estado sale de:
     #  - responde_red: la red contesta (ping o TCP/135, en paralelo)
     #  - segundos_sin_reporte: antiguedad real del ultimo check-in del kiosk
     #  - push_estado: resultado del ultimo intento de despertar al kiosk
@@ -489,6 +491,7 @@ function Get-AllKiosks {
             try { $seg = [int]((Get-Date) - [datetime]::Parse($k.ultima_conexion)).TotalSeconds; if ($seg -lt 0) { $seg = 0 } } catch { $seg = $null }
         }
         $k | Add-Member -MemberType NoteProperty -Name "segundos_sin_reporte" -Value $seg -Force
+        if ($responde) { $k.ultima_conexion = (Get-Date).ToString("o") }
         $pe = $null
         if ($script:PushEstados -and $k.ip_actual -and $script:PushEstados.ContainsKey($k.ip_actual)) { $pe = $script:PushEstados[$k.ip_actual] }
         $k | Add-Member -MemberType NoteProperty -Name "push_estado" -Value $pe -Force
