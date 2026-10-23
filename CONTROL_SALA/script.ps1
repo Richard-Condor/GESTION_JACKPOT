@@ -1,123 +1,135 @@
-﻿# ============================================================================
-# script.ps1 - ACTUALIZACION API + PANEL (panel de gestion v2)
-# v4.6 (2026-10-22): script de UNA subida. Hace SOLO tres cosas:
-#   1) FASE A: migra la API a la api_server.nuevo corregida (la del sello
-#      de ping: "ultima conexion" = hora del momento si la maquina
-#      responde), conservando el nombre de la sala y la IP de cada
-#      servidor (logica identica a la probada en las visitas de rescate).
-#   2) AVISO OK: manda UNA fila a la hoja de Google con el nombre de la
-#      sala, "OK" y la fecha (solo si la migracion se ha hecho y el
-#      panel.html de C:\Control es el bueno, SHA256 F7CAAD3C...).
-#      Sin OK en la hoja = esa sala no se ha actualizado.
-#   3) CIERRE: reinicia la API (matar diferido por WMI, como la v4.4)
-#      para que la nueva entre en servicio.
-# NO recorre equipos: no hay FASE B ni informe de campana. El panel.html
-# nuevo lo copia el propio actualizador como fichero suelto antes de
-# ejecutar este script. Pensado para subirlo a CONTROL_SALA junto a la
-# api_server.nuevo corregida y el panel.html bueno; cada sala viva lo
-# ejecuta una sola vez en su ciclo de 15 min.
-# ============================================================================
+# =====================================================================
+#  instalar_fase2_v3.ps1 - FASE 2 en UNA sala, version definitiva:
+#    1) Reinstala el api_server desde api_server.nuevo (con la
+#       identidad de ESTA sala leida del api instalado) y lo rearranca.
+#    2) Comprueba que el panel.html nuevo esta en C:\Control.
+#    3) Copia el control_kiosk.ps1 nuevo a los miniPC de los registros
+#       (C:\Control\kiosks\*.json) con las credenciales de la flota:
+#       net use con User1 y, si falla, User2 (leidas del api instalado,
+#       nunca se imprimen). Verifica cada copia por huella remota.
+#  Sin reinicios de miniPC: el control nuevo entra en el siguiente
+#  latido de cada maquina.
+#
+#  Ejecutar COMO ADMINISTRADOR en el SERVIDOR de la sala, con estos
+#  ficheros en la MISMA carpeta que el script:
+#      api_server.nuevo   panel.html   control_kiosk.ps1
+# =====================================================================
+$ErrorActionPreference = 'Continue'
+$Aqui    = Split-Path -Parent $MyInvocation.MyCommand.Path
+$Control = 'C:\Control'
+$H_API     = 'EE53223C244EBD380BF0A72E868F05F07CFB2BD81D31B5AE9770B7C5AB93E46D'
+$H_PANEL   = '4CA779310067D2BCE416A1429AA8CF30E77B11F75740C103B19B487548F8F0B6'
+$H_CONTROL = '1403F582C6F8E4C433B72711AD20D29EC0C5C56C7523D7B9E5AC4F9E921C24BF'
 
-$ControlPath = "C:\Control"
-$LogFile     = Join-Path $ControlPath "campana.log"
+function Parar($m) { Write-Host "`nPARO: $m" -ForegroundColor Red; exit 1 }
+function Huella($p) { (Get-FileHash $p -Algorithm SHA256).Hash }
 
-# Hoja de Google (la misma del instalador RustDesk) para el aviso OK
-$SheetsUrl = "https://script.google.com/macros/s/AKfycbxb415JbG0_-y2hmMtrhGN6nUtAqGGOqV5T33KnNfrbIoi_-e4kq2INHk-PeCDMPD44gw/exec"
+Write-Host '== INSTALADOR FASE 2 v3 ==' -ForegroundColor Cyan
 
-function Log-Campana([string]$m) {
-    $linea = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $m"
-    Add-Content -Path $LogFile -Value $linea -Encoding UTF8 -ErrorAction SilentlyContinue
-    Write-Host $linea
+# --- 0) ficheros y huellas -------------------------------------------
+foreach ($par in @(@('api_server.nuevo', $H_API), @('panel.html', $H_PANEL), @('control_kiosk.ps1', $H_CONTROL))) {
+    $p = Join-Path $Aqui $par[0]
+    if (-not (Test-Path $p)) { Parar "falta $($par[0]) junto al script." }
+    if ((Huella $p) -ne $par[1]) { Parar "la huella de $($par[0]) no cuadra. No toco nada." }
 }
+$apiInstalado = Join-Path $Control 'api_server.ps1'
+if (-not (Test-Path $apiInstalado)) { Parar 'no encuentro el api_server.ps1 instalado en C:\Control.' }
+Write-Host '0) Huellas OK.' -ForegroundColor Green
 
-Log-Campana "================ ACTUALIZACION API + PANEL ================"
-
-# ============================================================================
-# FASE A - Migracion de la API (la misma logica probada de la v4.5)
-# ============================================================================
-$script:NombreSala = $null
-$script:ApiMigrada  = $false
-try {
-    $apiActual = Join-Path $ControlPath "api_server.ps1"
-    $apiNueva  = Join-Path $ControlPath "api_server.nuevo"
-    if ((Test-Path $apiNueva) -and (Test-Path $apiActual)) {
-        $viejo = Get-Content $apiActual -Raw -Encoding UTF8
-        $mIP   = [regex]::Match($viejo, '(?m)^\$IP_DEL_SERVIDOR\s*=\s*"([^"]*)"')
-        $mNom  = [regex]::Match($viejo, '(?m)^\$SALA_NOMBRE\s*=\s*"([^"]*)"')
-        if ($mIP.Success -and $mNom.Success -and $mIP.Groups[1].Value -ne "" -and $mNom.Groups[1].Value -ne "") {
-            $ipSala = $mIP.Groups[1].Value; $script:NombreSala = $mNom.Groups[1].Value
-            $nuevo = Get-Content $apiNueva -Raw -Encoding UTF8
-            $nuevo = $nuevo -replace '(?m)^\$IP_DEL_SERVIDOR\s*=.*', "`$IP_DEL_SERVIDOR = `"$ipSala`""
-            $nuevo = $nuevo -replace '(?m)^\$SALA_NOMBRE\s*=.*',     "`$SALA_NOMBRE = `"$($script:NombreSala)`""
-            if ($nuevo -match [regex]::Escape("`$SALA_NOMBRE = `"$($script:NombreSala)`"")) {
-                $respaldo = Join-Path $ControlPath ("api_server.ps1.bak-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
-                Copy-Item $apiActual $respaldo -Force -ErrorAction Stop
-                [System.IO.File]::WriteAllText($apiActual, $nuevo, (New-Object System.Text.UTF8Encoding($true)))
-                $script:ApiMigrada = $true
-                Log-Campana "FASE A: API migrada (sala '$($script:NombreSala)', IP $ipSala). Respaldo: $respaldo"
-            } else { Log-Campana "FASE A: la inyeccion no caso; API sin tocar." }
-        } else { Log-Campana "FASE A: no se pudo leer la identidad del api actual; API sin tocar." }
-    } else { Log-Campana "FASE A: omitida (no hay api_server.nuevo o api_server.ps1)." }
-    if (-not $script:NombreSala -and (Test-Path $apiActual)) {
-        $t = Get-Content $apiActual -Raw -Encoding UTF8
-        $mm = [regex]::Match($t, '(?m)^\$SALA_NOMBRE\s*=\s*"([^"]*)"')
-        if ($mm.Success) { $script:NombreSala = $mm.Groups[1].Value }
-    }
-} catch { Log-Campana "FASE A: error: $($_.Exception.Message)" }
-if (-not $script:NombreSala) { $script:NombreSala = $env:COMPUTERNAME }
-
-# ============================================================================
-# AVISO OK - Una sola fila a la hoja: sala + OK + fecha.
-# Solo se manda si la API se ha migrado Y el panel de C:\Control es el
-# bueno (SHA256 esperado). Si algo no cuadra, no hay OK: queda en el log.
-# ============================================================================
-$PanelSHA = "F7CAAD3C0B5ACFF15F1411947D76381D2F33FC89F8EA3A0CF501248B5D699B34"
-$panelOk = $false
-try {
-    $panelPath = Join-Path $ControlPath "panel.html"
-    if (Test-Path $panelPath) {
-        $h = (Get-FileHash $panelPath -Algorithm SHA256).Hash
-        $panelOk = ($h -eq $PanelSHA)
-        Log-Campana "PANEL: SHA256 $h (esperado $PanelSHA) - coincide: $panelOk"
-    } else { Log-Campana "PANEL: no hay panel.html en C:\Control." }
-} catch { Log-Campana "PANEL: no se pudo comprobar el hash: $($_.Exception.Message)" }
-
-if ($script:ApiMigrada -and $panelOk) {
-    $payload = "{""nombre"":""$($script:NombreSala -replace '"','')"",""id"":""OK"",""pc"":,usuario:,""fecha"":""$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')""}"
-    $enviado = $false
-    try {
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add("Content-Type", "application/json")
-        $wc.UploadString($SheetsUrl, $payload) | Out-Null
-        $enviado = $true
-    } catch {}
-    if (-not $enviado) {
-        try { Invoke-RestMethod -Uri $SheetsUrl -Method Post -Body $payload -ContentType "application/json" -TimeoutSec 15 -UseBasicParsing | Out-Null; $enviado = $true } catch {}
-    }
-    if ($enviado) { Log-Campana "AVISO OK: enviado a la hoja (sala '$($script:NombreSala)')." }
-    else { Log-Campana "AVISO OK: no se pudo enviar a la hoja; la actualizacion local si esta hecha." }
-} else {
-    Log-Campana "AVISO OK: NO enviado (ApiMigrada=$script:ApiMigrada, PanelOk=$panelOk)."
+# --- datos del api instalado: identidad y credenciales (no se imprimen)
+$apiTxt = Get-Content $apiInstalado -Raw -Encoding UTF8
+function Dato($n) {
+    $m = [regex]::Match($apiTxt, "(?m)^\s*\`$$n\s*=\s*[""']([^""']*)[""']")
+    if ($m.Success) { $m.Groups[1].Value } else { $null }
 }
+$ipSala = Dato 'IP_DEL_SERVIDOR'; $nombreSala = Dato 'SALA_NOMBRE'
+$U1 = Dato 'User1'; $P1 = Dato 'Pass1'; $U2 = Dato 'User2'; $P2 = Dato 'Pass2'
+if (-not ($ipSala -and $nombreSala)) { Parar 'no leo la identidad de la sala del api instalado.' }
+if (-not ($U1 -and $P1)) { Parar 'no leo User1/Pass1 del api instalado.' }
+Write-Host "   Sala: $nombreSala ($ipSala)"
 
-# ============================================================================
-# CIERRE v4.4 - Si la FASE A ha migrado la API, reiniciarla para aplicar
-# (matar diferido por WMI, fuera del arbol de procesos: el actualizador
-# apunta la ejecucion en su manifiesto antes de que la API muera)
-# ============================================================================
-if ($script:ApiMigrada) {
+# --- 1) reinstalar el api ---------------------------------------------
+$lineas = Get-Content (Join-Path $Aqui 'api_server.nuevo') -Encoding UTF8
+$lineas = $lineas | ForEach-Object {
+    if ($_ -match '^\$IP_DEL_SERVIDOR\s*=') { "`$IP_DEL_SERVIDOR = `"$ipSala`"" }
+    elseif ($_ -match '^\$SALA_NOMBRE\s*=') { "`$SALA_NOMBRE = `"$nombreSala`"" }
+    else { $_ }
+}
+$bakApi = "$apiInstalado.bak-fase2"
+if (-not (Test-Path $bakApi)) { Copy-Item $apiInstalado $bakApi -Force }
+Set-Content -Path $apiInstalado -Value $lineas -Encoding UTF8
+Write-Host '1) api_server.ps1 reinstalado con la identidad de la sala.' -ForegroundColor Green
+
+Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -match 'api_server\.ps1' -and $_.ProcessId -ne $PID } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+$apiOk = $false
+foreach ($i in 1..30) {
+    Start-Sleep -Seconds 2
+    try { $null = Invoke-WebRequest 'http://127.0.0.1:5005/' -UseBasicParsing -TimeoutSec 3; $apiOk = $true; break } catch { if ($_.Exception.Response) { $apiOk = $true; break } }
+}
+if ($apiOk) { Write-Host '   API respondiendo en :5005.' -ForegroundColor Green }
+else { Write-Host '   AVISO: la API aun no responde (a veces tarda mas de 60 s); sigo con el control.' -ForegroundColor Yellow }
+
+# --- 2) panel -----------------------------------------------------------
+$panelDst = Join-Path $Control 'panel.html'
+$panelSrc = Join-Path $Aqui 'panel.html'
+if ((Resolve-Path $panelSrc).Path -ne $panelDst) {
+    if ((Test-Path $panelDst) -and -not (Test-Path "$panelDst.bak-fase2")) { Copy-Item $panelDst "$panelDst.bak-fase2" -Force }
+    Copy-Item $panelSrc $panelDst -Force
+}
+if ((Huella $panelDst) -eq $H_PANEL) { Write-Host '2) panel.html nuevo confirmado en C:\Control.' -ForegroundColor Green }
+else { Write-Host '2) AVISO: el panel de C:\Control no tiene la huella nueva.' -ForegroundColor Yellow }
+
+# --- 3) copia del control a los miniPC de los registros -----------------
+$origen = Join-Path $Aqui 'control_kiosk.ps1'
+$MisIPs = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue).IPAddress
+$ips = Get-ChildItem (Join-Path $Control 'kiosks') -Filter '*.json' |
+       ForEach-Object { ($_.BaseName -split '_')[0] } | Sort-Object -Unique
+Write-Host ("3) MiniPC de la sala: " + $ips.Count)
+$okList = @(); $yaList = @(); $sinRed = @(); $sinAcceso = @(); $errores = @()
+foreach ($ip in $ips) {
+    $destino = "\\$ip\C$\Kiosk\control_kiosk.ps1"
+    if ($MisIPs -contains $ip) {
+        Copy-Item $origen 'C:\Kiosk\control_kiosk.ps1' -Force -ErrorAction SilentlyContinue
+        Write-Host "   $ip  este servidor: copiado en local" -ForegroundColor Green
+        $okList += $ip; continue
+    }
+    if (-not (Test-Connection -ComputerName $ip -Count 1 -Quiet -ErrorAction SilentlyContinue)) {
+        Write-Host "   $ip  SIN RED" -ForegroundColor Yellow; $sinRed += $ip; continue
+    }
+    $conectado = $false
+    foreach ($par in @(@($U1, $P1), @($U2, $P2))) {
+        if (-not $par[0]) { continue }
+        net use "\\$ip\C$" /delete /y 2>&1 | Out-Null
+        net use "\\$ip\C$" /user:$($par[0]) $($par[1]) 2>&1 | Out-Null
+        if (Test-Path "\\$ip\C$\Kiosk") { $conectado = $true; break }
+    }
+    if (-not $conectado) {
+        Write-Host "   $ip  SIN ACCESO (net use rechazado con las dos credenciales)" -ForegroundColor Red
+        $sinAcceso += $ip; continue
+    }
     try {
-        $apiProcs = Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -match "api_server\.ps1" -and $_.ProcessId -ne $PID }
-        foreach ($p in $apiProcs) {
-            $cmdKill = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command `"Start-Sleep -Seconds 15; Stop-Process -Id $($p.ProcessId) -Force`""
-            $resKill = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $cmdKill }
-            if ($resKill.ReturnValue -eq 0) {
-                Log-Campana "CIERRE: reinicio de la API programado en 15 s (PID $($p.ProcessId)) para aplicar la migracion."
-            } else {
-                Log-Campana "CIERRE: WMI no pudo programar el reinicio de la API (codigo $($resKill.ReturnValue))."
-            }
+        $hRemota = $null
+        if (Test-Path $destino) { $hRemota = Huella $destino }
+        if ($hRemota -eq $H_CONTROL) {
+            Write-Host "   $ip  ya tenia el de la fase 2" -ForegroundColor DarkGray
+            $yaList += $ip
+        } else {
+            if ((Test-Path $destino) -and -not (Test-Path "$destino.bak-fase2")) { Copy-Item $destino "$destino.bak-fase2" -Force }
+            Copy-Item $origen $destino -Force -ErrorAction Stop
+            if ((Huella $destino) -eq $H_CONTROL) { Write-Host "   $ip  copiado y verificado" -ForegroundColor Green; $okList += $ip }
+            else { Write-Host "   $ip  copiado pero la huella no cuadra" -ForegroundColor Red; $errores += $ip }
         }
-    } catch { Log-Campana "CIERRE: no se pudo programar el reinicio de la API: $($_.Exception.Message)" }
+    } catch {
+        Write-Host "   $ip  ERROR: $($_.Exception.Message)" -ForegroundColor Red; $errores += $ip
+    }
+    net use "\\$ip\C$" /delete /y 2>&1 | Out-Null
 }
 
-Log-Campana "================ FIN ACTUALIZACION ================"
+Write-Host "`n== RESULTADO ==" -ForegroundColor Cyan
+Write-Host ("Control fase 2: copiados {0} · ya lo tenian {1} · total {2} de {3}" -f $okList.Count, $yaList.Count, ($okList.Count + $yaList.Count), $ips.Count)
+if ($sinRed.Count)    { Write-Host ("Sin red:     " + ($sinRed -join ', ')) -ForegroundColor Yellow }
+if ($sinAcceso.Count) { Write-Host ("Sin acceso:  " + ($sinAcceso -join ', ')) -ForegroundColor Red }
+if ($errores.Count)   { Write-Host ("Con error:   " + ($errores -join ', ')) -ForegroundColor Red }
+Write-Host 'El control nuevo entra solo en el siguiente latido de cada maquina.'

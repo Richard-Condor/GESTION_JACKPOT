@@ -371,7 +371,12 @@ function renderTable() {
     if (!match) continue;
 
     let maxTime = Math.max(...group.map(k => new Date(k.ultima_conexion||0).getTime()));
-    let timeStr = maxTime > 0 ? new Date(maxTime).toLocaleTimeString('es-ES') : '—';
+    let timeStr = '—';
+    if (maxTime > 0) {
+      const fMax = new Date(maxTime); const hMax = new Date();
+      const esHoy = fMax.getFullYear() === hMax.getFullYear() && fMax.getMonth() === hMax.getMonth() && fMax.getDate() === hMax.getDate();
+      timeStr = esHoy ? fMax.toLocaleTimeString('es-ES') : fMax.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) + ', ' + fMax.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    }
     const est = estadoGrupo(group);
     const centroTxt = est.clase === 'on' ? `Conexión OK: ${timeStr}` : (maxTime > 0 ? `Sin conexión desde: ${timeStr}` : 'Sin conexión');
     const nombre = groupBaseName(group) || ip;

@@ -888,6 +888,7 @@ while ($true) {
                 $d = Read-KioskData $body.uid; if (-not $d) { $d = New-KioskData $body.uid }
     $d.matricula = $body.matricula; $d.ip_actual = $body.ip_actual; $d.hostname = $body.hostname; $d.puesto = $body.puesto; $d.ultima_conexion = $body.ultima_conexion
     if ($body.nombre_maquina) { $d | Add-Member -MemberType NoteProperty -Name "nombre_maquina" -Value $body.nombre_maquina -Force }
+    if ($body.rustdesk_id) { $d | Add-Member -MemberType NoteProperty -Name "rustdesk_id" -Value $body.rustdesk_id -Force }
     if ($null -ne $body.qr_status) { $d | Add-Member -MemberType NoteProperty -Name "qr_status" -Value $body.qr_status -Force }
     if ($null -ne $body.pv_status) { $d | Add-Member -MemberType NoteProperty -Name "pv_status" -Value $body.pv_status -Force }
                 Save-KioskData $body.uid $d; Send-Response $response '{"ok":true}'
